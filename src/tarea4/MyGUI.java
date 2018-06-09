@@ -9,6 +9,7 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
@@ -17,8 +18,14 @@ import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import org.bytedeco.javacpp.opencv_core.*;
+import org.bytedeco.javacv.CanvasFrame;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
+import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FrameGrabber;
+import org.bytedeco.javacv.Java2DFrameConverter;
+import org.bytedeco.javacv.OpenCVFrameConverter;
+import org.bytedeco.javacv.OpenCVFrameConverter.ToIplImage;
 
 /**
  *
@@ -37,10 +44,11 @@ public class MyGUI extends javax.swing.JFrame {
     private final JLabel targetImageLabel;
     private final JLabel mosaicImageLabel;
     private int numberSamples;
-    private int widthBlocks;
-    private int heightBlocks;
+    private int colsBlock;
+    private int rowsBlock;
     private int featuresPerBlockHeight;
     private int featuresPerBlockWidth;
+    private int distanceThreshold;
     private int[][] targetImageFeatures;
     private int[][] sampleImagesFeatures;
     
@@ -66,10 +74,11 @@ public class MyGUI extends javax.swing.JFrame {
         targetImageLabel = new JLabel();
         mosaicImageLabel = new JLabel();
         numberSamples = 100;
-        widthBlocks = 8;
-        heightBlocks = 8;
+        colsBlock = 8;
+        rowsBlock = 8;
         featuresPerBlockHeight = 2;
         featuresPerBlockWidth = 2;
+        distanceThreshold = 50;
         targetImageFeatures = new int[1][1];
         sampleImagesFeatures = new int[1][1];
     }
@@ -240,11 +249,18 @@ public class MyGUI extends javax.swing.JFrame {
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
+    private IplImage toIplImage(BufferedImage bufImage) {
+        ToIplImage iplConverter = new OpenCVFrameConverter.ToIplImage();
+        Java2DFrameConverter java2dConverter = new Java2DFrameConverter();
+        IplImage iplImage = iplConverter.convert(java2dConverter.convert(bufImage));
+        return iplImage;
+}
+
     private void updateMoviePathGUI(String path){
         moviePath = path;
         UbicacionPelicula.setText(path);
     }
-    
+
     private void updateTargetImageGUI(BufferedImage imgTg){
         int mWidth, mHeight;
         if(imgTg.getWidth() > imgTg.getHeight()){
@@ -269,15 +285,81 @@ public class MyGUI extends javax.swing.JFrame {
         jScrollPane1.getViewport().add(targetImageLabel);
         // Repainting the scroll pane to update the changes
         jScrollPane1.repaint();
-        
     }
-    
-    private int[] extractFeaturesPerBlock(int numberFeatures, int[] pixelData){
-        int[] featuresArray = new int[numberFeatures];
-        
+
+    private ArrayList divideTargetImage(BufferedImage target){
+        ArrayList<BufferedImage> smallerTargetImages = new ArrayList();
+        BufferedImage auxImg;
+        int blockWidth = targetImage.getWidth() / colsBlock;
+        int blockHeight = targetImage.getHeight() / rowsBlock;
+
+        for (int i = 0; i < rowsBlock; i++){
+            for (int j = 0; j < colsBlock; j++){
+                auxImg = new BufferedImage(blockWidth, blockHeight, target.getType());
+                smallerTargetImages.add(auxImg);
+
+                Graphics2D gr = smallerTargetImages.get(i*colsBlock + j).createGraphics();
+                gr.drawImage(target, 0, 0, blockWidth, blockHeight, blockWidth * j, blockHeight * i, blockWidth * j + blockWidth, blockHeight * i + blockHeight, null);
+                gr.dispose();
+            }
+        }
+        try {
+            for (int i = 0; i < smallerTargetImages.size(); i++) {
+                ImageIO.write(smallerTargetImages.get(i), "jpg", new File("img" + i + ".jpg"));
+            }
+        } catch (IOException ex) {
+            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return smallerTargetImages;
+    }
+
+    private int[] extractFeaturesFromImage(BufferedImage img){
+//        IplImage showImg = toIplImage(img);
+//        CanvasFrame frame = new CanvasFrame("una imagen", CanvasFrame.getDefaultGamma()/grabber.getGamma());
+//        OpenCVFrameConverter.ToIplImage converter = new OpenCVFrameConverter.ToIplImage();
+//        Frame rotatedFrame = converter.convert(showImg);
+//        frame.showImage(rotatedFrame);
+        int featureWidth = img.getWidth() / featuresPerBlockWidth;
+        int featureHeight = img.getHeight() / featuresPerBlockHeight;
+        // index of sample image, boolean "used", r, g, b for each block.
+        int featuresPerBlock = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
+        int[] feature = new int[featuresPerBlock];
+        int[] pixelData;
+        int count = 0;
+
+        feature[0] = feature[1] = 0;
+        for (int i = 0; i < featuresPerBlockHeight; i++){
+            for (int j = 0; j < featuresPerBlockWidth; j++){
+                pixelData = new int[featureWidth * featureHeight];
+                img.getRGB(featureWidth * j, featureHeight * i, featureWidth, featureHeight, pixelData, 0, featureWidth);
+                pixelData = getAverageFeature(pixelData);
+                feature[2 + count*3] = pixelData[0];
+                feature[2 + count*3 + 1] = pixelData[1];
+                feature[2 + count*3 + 2] = pixelData[2];
+                count++;
+            }
+        }
+        return feature;
+    }
+
+    private int[] getAverageFeature(int[] pixelData){
+        int[] featuresArray = new int[3];
+        long reds = 0;
+        long greens = 0;
+        long blues = 0;
+
+        for(int i = 0; i < pixelData.length; i++){
+            reds += (pixelData[i] >> 16) & 0xff;
+            greens += (pixelData[i] >> 8) & 0xff;
+            blues += pixelData[i] & 0xff;
+        }
+        featuresArray[0] = (int)reds / pixelData.length;
+        featuresArray[1] = (int)greens / pixelData.length;
+        featuresArray[2] = (int)blues / pixelData.length;
+
         return featuresArray;
     }
-    
+
     private void ElegirImagenActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ElegirImagenActionPerformed
         if (!"".equals(moviePath)){
             int returnVal = fcOpenPic.showOpenDialog(this);
@@ -291,7 +373,8 @@ public class MyGUI extends javax.swing.JFrame {
                     // Report exceptions
                     JOptionPane.showMessageDialog(this, "Error al escoger Imagen Objetivo!");
                 }
-            } 
+            }
+            divideTargetImage(targetImage);
         }else{
             JOptionPane.showMessageDialog(this, "¡ERROR: Escoja una película primero!");
         }
@@ -315,36 +398,23 @@ public class MyGUI extends javax.swing.JFrame {
 
     private void GenerarMosaicoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_GenerarMosaicoActionPerformed
         // 1- Target image gets divided into NxM Blocks and the features extraction of target image and sample images is performed.
-//        int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 1;
-//        int numberBlocks = heightBlocks * widthBlocks;
-//        double blockWidth = (double)targetImage.getWidth() / (double)widthBlocks;
-//        double blockHeight = (double)targetImage.getHeight() / (double)heightBlocks;
-//        int[] pixelData;
-//        //targetImage.getRGB(0,0,10,10,pixelData,0,10);
-//        targetImageFeatures = new int[numberBlocks][numberFeatures];
-//        sampleImagesFeatures = new int[numberSamples][numberFeatures];
-//        
-//        for (int i = 0; i < heightBlocks; i++){
-//            for (int j = 0; j < widthBlocks; j++){
-//                int w, h;
-//                
-//                if(j == widthBlocks-1)
-//                    w = targetImage.getWidth() - (widthBlocks-1)* (int)blockWidth;
-//                else
-//                    w = (int)blockWidth;
-//                
-//                if(i == heightBlocks-1){
-//                    h = targetImage.getHeight() - (heightBlocks-1)* (int)blockHeight;
-//                }else
-//                    h = (int)blockHeight;
-//                
-//                pixelData = new int[w*h];
-//                targetImage.getRGB((int)blockWidth * j, (int)blockHeight * i, w, h, pixelData, 0, w);
-//                
-//                targetImageFeatures[i*widthBlocks + j] = extractFeaturesPerBlock(numberFeatures, pixelData);
-//            }
-//        }
+        ArrayList<BufferedImage> targetImageBlocks = divideTargetImage(targetImage);
+        // index of sample, boolean "used", r, g, b for each block.
+        int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
+        int numberBlocks = rowsBlock * colsBlock;
+        double blockWidth = (double)targetImage.getWidth() / (double)colsBlock;
+        double blockHeight = (double)targetImage.getHeight() / (double)rowsBlock;
+        int[] pixelData;
+        //targetImage.getRGB(0,0,10,10,pixelData,0,10);
+        targetImageFeatures = new int[numberBlocks][numberFeatures];
+        sampleImagesFeatures = new int[numberSamples][numberFeatures];
         
+        for (int i = 0; i < targetImageBlocks.size(); i++){
+            targetImageFeatures[i] = extractFeaturesFromImage(targetImageBlocks.get(i));
+        }
+
+        pixelData = new int[2];
+        pixelData[0] = pixelData[1] = 1;
         
         // 2- The sample images get matched to the target images blocks
         
