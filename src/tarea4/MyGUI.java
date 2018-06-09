@@ -409,6 +409,39 @@ public class MyGUI extends javax.swing.JFrame {
         }
     }
 
+    private void matchSampleImagesToTargetImage(){
+        int minIndx = 0;
+        long actualDifference;
+        long minDifference;
+        for(int tgImgIndx = 0; tgImgIndx < targetImageFeatures.length; tgImgIndx++){
+            minDifference = 999999999;
+            for(int smplImgIndx = 0; smplImgIndx < sampleImagesFeatures.length; smplImgIndx++){
+                if (sampleImagesFeatures[smplImgIndx][1] == 0){
+                    actualDifference = differenceBetweenFeaturesEuclidean(targetImageFeatures[tgImgIndx], sampleImagesFeatures[smplImgIndx]);
+                    if(actualDifference < minDifference){
+                        minDifference = actualDifference;
+                        minIndx = smplImgIndx;
+                    }
+                }
+            }
+            targetImageFeatures[tgImgIndx][0] = minIndx;
+            sampleImagesFeatures[minIndx][1] = 1;
+        }
+    }
+
+    private long differenceBetweenFeaturesEuclidean(int[] targetFeatures, int[] sampleFeatures){
+        //( USING EUCLIEAN DISTANCE )
+        long result = 0;
+        int singleDifference;
+
+        for(int i = 2; i < targetFeatures.length; i++){
+            singleDifference = targetFeatures[i] - sampleFeatures[i];
+            result += singleDifference * singleDifference;
+        }
+
+        return result;
+    }
+
     private void ElegirImagenActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ElegirImagenActionPerformed
         if (!"".equals(moviePath)){
             int returnVal = fcOpenPic.showOpenDialog(this);
@@ -457,12 +490,12 @@ public class MyGUI extends javax.swing.JFrame {
         for (int i = 0; i < targetImageBlocks.size(); i++){
             targetImageFeatures[i] = extractFeaturesFromImage(targetImageBlocks.get(i));
         }
-//        pixelData = new int[2];
+
 //        pixelData[0] = pixelData[1] = 1;
         // 2- The sample images get matched to the target images blocks
+        matchSampleImagesToTargetImage();
 
-
-
+        pixelData = new int[2];
         // 3- Color Adjustment of sample images to improve quality.
     }//GEN-LAST:event_GenerarMosaicoActionPerformed
 
