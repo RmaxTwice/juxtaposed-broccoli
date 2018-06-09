@@ -8,7 +8,11 @@ package tarea4;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -57,7 +61,11 @@ public class MyGUI extends javax.swing.JFrame {
      */
     public MyGUI() {
         initComponents();
-        
+
+        // Local variable
+        // index of sample, boolean "used", r, g, b for each block.
+        int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
+
         // Global variables initizalization
         moviePath = "";
         lengthInTime = 0;
@@ -79,8 +87,8 @@ public class MyGUI extends javax.swing.JFrame {
         featuresPerBlockHeight = 2;
         featuresPerBlockWidth = 2;
         distanceThreshold = 50;
-        targetImageFeatures = new int[1][1];
-        sampleImagesFeatures = new int[1][1];
+        targetImageFeatures = new int[rowsBlock * colsBlock][numberFeatures];
+        sampleImagesFeatures = new int[numberSamples][numberFeatures];
     }
 
     /**
@@ -146,6 +154,11 @@ public class MyGUI extends javax.swing.JFrame {
         });
 
         GenerarMuestras.setText("3. Generar Muestras");
+        GenerarMuestras.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                GenerarMuestrasActionPerformed(evt);
+            }
+        });
 
         GenerarMosaico.setText("4. Generar Mosaico");
         GenerarMosaico.addActionListener(new java.awt.event.ActionListener() {
@@ -303,13 +316,13 @@ public class MyGUI extends javax.swing.JFrame {
                 gr.dispose();
             }
         }
-        try {
-            for (int i = 0; i < smallerTargetImages.size(); i++) {
-                ImageIO.write(smallerTargetImages.get(i), "jpg", new File("img" + i + ".jpg"));
-            }
-        } catch (IOException ex) {
-            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
-        }
+//        try {
+//            for (int i = 0; i < smallerTargetImages.size(); i++) {
+//                ImageIO.write(smallerTargetImages.get(i), "jpg", new File("img" + i + ".jpg"));
+//            }
+//        } catch (IOException ex) {
+//            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+//        }
         return smallerTargetImages;
     }
 
@@ -360,6 +373,45 @@ public class MyGUI extends javax.swing.JFrame {
         return featuresArray;
     }
 
+    private void generateSampleImagesFromMovie() throws FrameGrabber.Exception{
+        double num = numberSamples + 1;
+        double factor = 1/num;
+        int lengthInVideoFrames = grabber.getLengthInVideoFrames();
+        Frame frame;
+        File outputfile;
+        Java2DFrameConverter myFC = new Java2DFrameConverter();
+        BufferedImage auxImage;
+        //FileWriter fw = new FileWriter("IMAGEDB/image_features.txt");
+
+        try(FileWriter fw = new FileWriter("IMAGEDB/0_image_features.txt")) {
+            fw.write("#archivo de features de muestras" + System.lineSeparator());
+        }catch (IOException ex) {
+            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        for (int i = 0; i < num-1; i++){
+            grabber.setVideoFrameNumber((int)(lengthInVideoFrames * factor) );
+            frame = grabber.grab();
+            //canvasFrame.showImage(frame);
+            factor += 1/num;
+            auxImage = myFC.convert(frame);
+
+            // Extracting sample image features.
+            sampleImagesFeatures[i] = extractFeaturesFromImage(auxImage);
+
+            // Writing features to file
+
+            // Writing images to file
+            outputfile = new File("IMAGEDB/"+ i + ".jpg");
+            try{
+                ImageIO.write(auxImage, "jpg", outputfile);
+            }
+            catch (IOException e)
+            {
+                e.getMessage();
+            }
+        }
+    }
+
     private void ElegirImagenActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ElegirImagenActionPerformed
         if (!"".equals(moviePath)){
             int returnVal = fcOpenPic.showOpenDialog(this);
@@ -373,8 +425,8 @@ public class MyGUI extends javax.swing.JFrame {
                     // Report exceptions
                     JOptionPane.showMessageDialog(this, "Error al escoger Imagen Objetivo!");
                 }
+                divideTargetImage(targetImage);
             }
-            divideTargetImage(targetImage);
         }else{
             JOptionPane.showMessageDialog(this, "¡ERROR: Escoja una película primero!");
         }
@@ -399,27 +451,40 @@ public class MyGUI extends javax.swing.JFrame {
     private void GenerarMosaicoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_GenerarMosaicoActionPerformed
         // 1- Target image gets divided into NxM Blocks and the features extraction of target image and sample images is performed.
         ArrayList<BufferedImage> targetImageBlocks = divideTargetImage(targetImage);
-        // index of sample, boolean "used", r, g, b for each block.
-        int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
-        int numberBlocks = rowsBlock * colsBlock;
         double blockWidth = (double)targetImage.getWidth() / (double)colsBlock;
         double blockHeight = (double)targetImage.getHeight() / (double)rowsBlock;
         int[] pixelData;
         //targetImage.getRGB(0,0,10,10,pixelData,0,10);
-        targetImageFeatures = new int[numberBlocks][numberFeatures];
-        sampleImagesFeatures = new int[numberSamples][numberFeatures];
         
+        // Extracting features from targetImage's blocks
         for (int i = 0; i < targetImageBlocks.size(); i++){
             targetImageFeatures[i] = extractFeaturesFromImage(targetImageBlocks.get(i));
         }
-
-        pixelData = new int[2];
-        pixelData[0] = pixelData[1] = 1;
-        
+//        pixelData = new int[2];
+//        pixelData[0] = pixelData[1] = 1;
         // 2- The sample images get matched to the target images blocks
-        
+
+
+
         // 3- Color Adjustment of sample images to improve quality.
     }//GEN-LAST:event_GenerarMosaicoActionPerformed
+
+    private void GenerarMuestrasActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_GenerarMuestrasActionPerformed
+        // First find out if directory for samples exists:
+        Path path = Paths.get("IMAGEDB/");
+        if (Files.notExists(path)) {
+            try {
+                Files.createDirectory(path);
+            } catch (IOException ex) {
+                Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        try {
+            generateSampleImagesFromMovie();
+        } catch (FrameGrabber.Exception ex) {
+            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }//GEN-LAST:event_GenerarMuestrasActionPerformed
 
     /**
      * @param args the command line arguments
