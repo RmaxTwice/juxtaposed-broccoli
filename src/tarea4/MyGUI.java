@@ -32,7 +32,6 @@ import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import org.bytedeco.javacpp.opencv_core.*;
-import org.bytedeco.javacv.CanvasFrame;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.FrameGrabber;
@@ -49,20 +48,20 @@ public class MyGUI extends javax.swing.JFrame {
 
     // Global variables
     private String moviePath;
-    private long lengthInTime;
+    private final long lengthInTime;
     private final JFileChooser fcOpenMovie;
     private final JFileChooser fcOpenPic;
+    private final JFileChooser fcSavePic;
     private FFmpegFrameGrabber grabber;
     private BufferedImage targetImage;
     private BufferedImage mosaicImage;
-    private JLabel targetImageLabel;
-    private JLabel mosaicImageLabel;
+    private final JLabel targetImageLabel;
+    private final JLabel mosaicImageLabel;
     private int numberSamples;
     private int colsBlock;
     private int rowsBlock;
     private int featuresPerBlockHeight;
     private int featuresPerBlockWidth;
-    private int distanceThreshold;
     private int[][] targetImageFeatures;
     private int[][] sampleImagesFeatures;
     // False = RGB and True = CIELAB
@@ -84,12 +83,16 @@ public class MyGUI extends javax.swing.JFrame {
         lengthInTime = 0;
         fcOpenMovie = new JFileChooser();
         fcOpenPic = new JFileChooser();
+        fcSavePic = new JFileChooser();
         FileNameExtensionFilter moviesFilter = new FileNameExtensionFilter("Películas: *.mp4, *.wmv, *.mkv, *.avi, *.3gp, *.mov", "mp4", "avi", "mkv", "wmv", "3gp", "mov");
         FileNameExtensionFilter imagesFilter = new FileNameExtensionFilter("Imágenes: *.bmp, *.jpg, *.png", "bmp", "jpg", "png");
+        FileNameExtensionFilter imagesSaveFilter = new FileNameExtensionFilter("Imágenes: *.jpg",  "jpg");
         fcOpenMovie.addChoosableFileFilter(moviesFilter);
         fcOpenPic.addChoosableFileFilter(imagesFilter);
+        fcSavePic.addChoosableFileFilter(imagesSaveFilter);
         fcOpenMovie.setFileFilter(moviesFilter);
         fcOpenPic.setFileFilter(imagesFilter);
+        fcSavePic.setFileFilter(imagesSaveFilter);
         grabber = new FFmpegFrameGrabber("");
         targetImage = null;
         mosaicImage = null;
@@ -100,7 +103,6 @@ public class MyGUI extends javax.swing.JFrame {
         rowsBlock = 16;
         featuresPerBlockHeight = 2;
         featuresPerBlockWidth = 2;
-        distanceThreshold = 50;
         targetImageFeatures = new int[rowsBlock * colsBlock][numberFeatures];
         sampleImagesFeatures = new int[numberSamples][numberFeatures];
         RGBorCIELAB = false;
@@ -202,6 +204,11 @@ public class MyGUI extends javax.swing.JFrame {
         MenuArchivo.setText("Archivo");
 
         GuardarMosaico.setText("Guardar Mosaico");
+        GuardarMosaico.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                GuardarMosaicoActionPerformed(evt);
+            }
+        });
         MenuArchivo.add(GuardarMosaico);
 
         BarraMenu.add(MenuArchivo);
@@ -371,36 +378,7 @@ public class MyGUI extends javax.swing.JFrame {
         return smallerTargetImages;
     }
 
-    private int[] extractFeaturesFromImage(BufferedImage img){
-//        IplImage showImg = toIplImage(img);
-//        CanvasFrame frame = new CanvasFrame("una imagen", CanvasFrame.getDefaultGamma()/grabber.getGamma());
-//        OpenCVFrameConverter.ToIplImage converter = new OpenCVFrameConverter.ToIplImage();
-//        Frame rotatedFrame = converter.convert(showImg);
-//        frame.showImage(rotatedFrame);
-        int featureWidth = img.getWidth() / featuresPerBlockWidth;
-        int featureHeight = img.getHeight() / featuresPerBlockHeight;
-        // index of sample image, boolean "used", r, g, b for each block.
-        int featuresPerBlock = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
-        int[] feature = new int[featuresPerBlock];
-        int[] pixelData;
-        int count = 0;
-
-        feature[0] = feature[1] = 0;
-        for (int i = 0; i < featuresPerBlockHeight; i++){
-            for (int j = 0; j < featuresPerBlockWidth; j++){
-                pixelData = new int[featureWidth * featureHeight];
-                img.getRGB(featureWidth * j, featureHeight * i, featureWidth, featureHeight, pixelData, 0, featureWidth);
-                pixelData = getAverageFeature(pixelData);
-                feature[2 + count*3] = pixelData[0];
-                feature[2 + count*3 + 1] = pixelData[1];
-                feature[2 + count*3 + 2] = pixelData[2];
-                count++;
-            }
-        }
-        return feature;
-    }
-
-    private int[] getAverageFeature(int[] pixelData){
+    private int[] getAverageFeatureRGB(int[] pixelData){
         int[] featuresArray = new int[3];
         long reds = 0;
         long greens = 0;
@@ -460,7 +438,7 @@ public class MyGUI extends javax.swing.JFrame {
             minDifference = 999999999;
             for(int smplImgIndx = 0; smplImgIndx < sampleImagesFeatures.length; smplImgIndx++){
                 if (sampleImagesFeatures[smplImgIndx][1] == 0){
-                    actualDifference = differenceBetweenFeaturesEuclidean(targetImageFeatures[tgImgIndx], sampleImagesFeatures[smplImgIndx]);
+                    actualDifference = differenceBetweenFeatures(targetImageFeatures[tgImgIndx], sampleImagesFeatures[smplImgIndx]);
                     if(actualDifference < minDifference){
                         minDifference = actualDifference;
                         minIndx = smplImgIndx;
@@ -493,7 +471,7 @@ public class MyGUI extends javax.swing.JFrame {
         }
     }
 
-    private long differenceBetweenFeaturesEuclidean(int[] targetFeatures, int[] sampleFeatures){
+    private long differenceBetweenFeatures(int[] targetFeatures, int[] sampleFeatures){
         //( USING EUCLIEAN DISTANCE )
         long result = 0;
         int singleDifference;
@@ -531,6 +509,38 @@ public class MyGUI extends javax.swing.JFrame {
         } catch (IOException ex) {
             Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
         }
+    }
+
+    private int[] extractFeaturesFromImage(BufferedImage img){
+//        IplImage showImg = toIplImage(img);
+//        CanvasFrame frame = new CanvasFrame("una imagen", CanvasFrame.getDefaultGamma()/grabber.getGamma());
+//        OpenCVFrameConverter.ToIplImage converter = new OpenCVFrameConverter.ToIplImage();
+//        Frame rotatedFrame = converter.convert(showImg);
+//        frame.showImage(rotatedFrame);
+        int featureWidth = img.getWidth() / featuresPerBlockWidth;
+        int featureHeight = img.getHeight() / featuresPerBlockHeight;
+        // index of sample image, boolean "used", r, g, b for each block.
+        int featuresPerBlock = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
+        int[] feature = new int[featuresPerBlock];
+        int[] pixelData;
+        int count = 0;
+
+        feature[0] = feature[1] = 0;
+
+        if (!RGBorCIELAB){
+            for (int i = 0; i < featuresPerBlockHeight; i++){
+                for (int j = 0; j < featuresPerBlockWidth; j++){
+                    pixelData = new int[featureWidth * featureHeight];
+                    img.getRGB(featureWidth * j, featureHeight * i, featureWidth, featureHeight, pixelData, 0, featureWidth);
+                    pixelData = getAverageFeatureRGB(pixelData);
+                    feature[2 + count*3] = pixelData[0];
+                    feature[2 + count*3 + 1] = pixelData[1];
+                    feature[2 + count*3 + 2] = pixelData[2];
+                    count++;
+                }
+            }
+        }
+        return feature;
     }
 
     private void extractFeaturesFromSampleImages(){
@@ -582,6 +592,7 @@ public class MyGUI extends javax.swing.JFrame {
                     JOptionPane.showMessageDialog(this, "Error al escoger Imagen Objetivo!");
                 }
 //                divideTargetImage(targetImage);
+//                JOptionPane.showMessageDialog(this, "Formato de imagen: " + targetImage.getType());
             }
         }else{
             JOptionPane.showMessageDialog(this, "¡ERROR: Escoja una película primero!");
@@ -621,12 +632,12 @@ public class MyGUI extends javax.swing.JFrame {
 
         updateMosaicImageGUI(mosaicImage);
 
-        try {
-            //File outputfile = new File("myMosaic.png");
-            ImageIO.write(mosaicImage, "jpg", new File("myMosaic.jpg"));
-        } catch (IOException ex) {
-            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
-        }
+//        try {
+//            //File outputfile = new File("myMosaic.png");
+//            ImageIO.write(mosaicImage, "jpg", new File("myMosaic.jpg"));
+//        } catch (IOException ex) {
+//            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+//        }
         for (int i = 0; i < targetImageFeatures.length; i++){
             targetImageFeatures[i][0] = 0;
         }
@@ -678,6 +689,7 @@ public class MyGUI extends javax.swing.JFrame {
 
         JCheckBox CielabCB = new JCheckBox("¿Usar CIELAB? (RGB por defecto)");
         CielabCB.setSelected(RGBorCIELAB);
+        CielabCB.setEnabled(false);
         JPanel spinPanel4 = new JPanel();
 
         // Panel for rows and colums.
@@ -739,6 +751,30 @@ public class MyGUI extends javax.swing.JFrame {
         sampleImagesFeatures = new int[numberSamples][numberFeatures];
     }//GEN-LAST:event_OpcionesActionPerformed
 
+    private void GuardarMosaicoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_GuardarMosaicoActionPerformed
+        int returnVal;
+        if ( mosaicImage != null ){
+            returnVal = fcSavePic.showSaveDialog(this);
+        }else{
+            JOptionPane.showMessageDialog(this, "¡ERROR: Cargue una imagen primero!");
+            return;
+        }
+        if (returnVal == JFileChooser.APPROVE_OPTION){
+            try {
+                File file = fcSavePic.getSelectedFile();
+                // Getting the image extension.
+                String path = file.getAbsolutePath();
+                String extension = path.substring(path.length() - 3);
+                if ("jpg".equals(extension)){
+                    ImageIO.write(mosaicImage, extension, new File(fcSavePic.getSelectedFile().getAbsolutePath()));
+                    JOptionPane.showMessageDialog(this, "Imagen Mosaico Guardada con éxito!");
+                }
+            } catch ( IOException e) {
+                JOptionPane.showMessageDialog(this, "¡ERROR: Ocurrio un error al guardar el archivo!");
+            }
+        }
+    }//GEN-LAST:event_GuardarMosaicoActionPerformed
+
     /**
      * @param args the command line arguments
      */
@@ -769,7 +805,6 @@ public class MyGUI extends javax.swing.JFrame {
         
         
     }
-
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JToggleButton AbrirPelicula;
     private javax.swing.JMenuBar BarraMenu;
