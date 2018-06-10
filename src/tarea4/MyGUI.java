@@ -18,9 +18,13 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
+import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JSpinner;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import org.bytedeco.javacpp.opencv_core.*;
 import org.bytedeco.javacv.CanvasFrame;
@@ -45,8 +49,9 @@ public class MyGUI extends javax.swing.JFrame {
     private final JFileChooser fcOpenPic;
     private FFmpegFrameGrabber grabber;
     private BufferedImage targetImage;
-    private final JLabel targetImageLabel;
-    private final JLabel mosaicImageLabel;
+    private BufferedImage mosaicImage;
+    private JLabel targetImageLabel;
+    private JLabel mosaicImageLabel;
     private int numberSamples;
     private int colsBlock;
     private int rowsBlock;
@@ -55,6 +60,8 @@ public class MyGUI extends javax.swing.JFrame {
     private int distanceThreshold;
     private int[][] targetImageFeatures;
     private int[][] sampleImagesFeatures;
+    // False = RGB and True = CIELAB
+    private boolean RGBorCIELAB;
     
     /**
      * Creates new form MyGUI
@@ -79,16 +86,18 @@ public class MyGUI extends javax.swing.JFrame {
         fcOpenPic.setFileFilter(imagesFilter);
         grabber = new FFmpegFrameGrabber("");
         targetImage = null;
+        mosaicImage = null;
         targetImageLabel = new JLabel();
         mosaicImageLabel = new JLabel();
-        numberSamples = 100;
-        colsBlock = 8;
-        rowsBlock = 8;
+        numberSamples = 600;
+        colsBlock = 16;
+        rowsBlock = 16;
         featuresPerBlockHeight = 2;
         featuresPerBlockWidth = 2;
         distanceThreshold = 50;
         targetImageFeatures = new int[rowsBlock * colsBlock][numberFeatures];
         sampleImagesFeatures = new int[numberSamples][numberFeatures];
+        RGBorCIELAB = false;
     }
 
     /**
@@ -192,6 +201,11 @@ public class MyGUI extends javax.swing.JFrame {
         MenuPreferencias.setText("Preferencias");
 
         Opciones.setText("Opciones");
+        Opciones.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                OpcionesActionPerformed(evt);
+            }
+        });
         MenuPreferencias.add(Opciones);
 
         BarraMenu.add(MenuPreferencias);
@@ -429,6 +443,27 @@ public class MyGUI extends javax.swing.JFrame {
         }
     }
 
+    private void createMosaicImageFromSamples(){
+        int x;
+        int y;
+        int w = targetImage.getWidth();
+        int h = targetImage.getHeight();
+        BufferedImage imgSample;
+        mosaicImage = new BufferedImage(w * colsBlock , targetImage.getHeight() * rowsBlock, targetImage.getType());
+        for(int i = 0; i < targetImageFeatures.length; i++){
+            x = i % colsBlock;
+            y = i / colsBlock;
+            try {
+                imgSample = ImageIO.read(new File("IMAGEDB/" + targetImageFeatures[i][0] + ".jpg"));
+                Graphics2D gr = mosaicImage.createGraphics();
+                gr.drawImage(imgSample, (w * x), (h * y), (w * x + w), (h * y + h), 0, 0, w, h, null);
+                //gr.drawImage(imgSample, 0, 0, w, h, (w * x), (h * y), (w * x + w), (h * y + h), null);
+                gr.dispose();
+            } catch (IOException e) {
+            }
+        }
+    }
+
     private long differenceBetweenFeaturesEuclidean(int[] targetFeatures, int[] sampleFeatures){
         //( USING EUCLIEAN DISTANCE )
         long result = 0;
@@ -455,7 +490,7 @@ public class MyGUI extends javax.swing.JFrame {
                     // Report exceptions
                     JOptionPane.showMessageDialog(this, "Error al escoger Imagen Objetivo!");
                 }
-                divideTargetImage(targetImage);
+//                divideTargetImage(targetImage);
             }
         }else{
             JOptionPane.showMessageDialog(this, "¡ERROR: Escoja una película primero!");
@@ -491,12 +526,24 @@ public class MyGUI extends javax.swing.JFrame {
             targetImageFeatures[i] = extractFeaturesFromImage(targetImageBlocks.get(i));
         }
 
-//        pixelData[0] = pixelData[1] = 1;
         // 2- The sample images get matched to the target images blocks
         matchSampleImagesToTargetImage();
 
-        pixelData = new int[2];
-        // 3- Color Adjustment of sample images to improve quality.
+        createMosaicImageFromSamples();
+
+        try {
+            //File outputfile = new File("myMosaic.png");
+            ImageIO.write(mosaicImage, "jpg", new File("myMosaic.jpg"));
+        } catch (IOException ex) {
+            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        for (int i = 0; i < targetImageBlocks.size(); i++){
+            targetImageFeatures[i][0] = 0;
+        }
+        for (int i = 0; i < sampleImagesFeatures.length; i++){
+            targetImageFeatures[i][0] = 0;
+        }
     }//GEN-LAST:event_GenerarMosaicoActionPerformed
 
     private void GenerarMuestrasActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_GenerarMuestrasActionPerformed
@@ -514,7 +561,76 @@ public class MyGUI extends javax.swing.JFrame {
         } catch (FrameGrabber.Exception ex) {
             Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
         }
+        JOptionPane.showMessageDialog(this, "Imágenes Muestra generadas con Éxito!");
     }//GEN-LAST:event_GenerarMuestrasActionPerformed
+
+    private void OpcionesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_OpcionesActionPerformed
+        SpinnerNumberModel model1 = new SpinnerNumberModel(colsBlock, 2, 64, 1);  // Initial value, min, max, step
+        SpinnerNumberModel model2 = new SpinnerNumberModel(rowsBlock, 2, 64, 1);
+        JSpinner spinCols = new JSpinner(model1);
+        JSpinner spinRows = new JSpinner(model2);
+        JLabel labelCols = new JLabel("Columnas:");
+        JLabel labelRows = new JLabel("Filas:");
+        JPanel spinPanel1 = new JPanel();
+
+        SpinnerNumberModel model3 = new SpinnerNumberModel(featuresPerBlockWidth, 2, 8, 1);  // Initial value, min, max, step
+        SpinnerNumberModel model4 = new SpinnerNumberModel(featuresPerBlockHeight, 2, 8, 1);
+        JSpinner spinFeatureCols = new JSpinner(model3);
+        JSpinner spinFeatureRows = new JSpinner(model4);
+        JLabel labelFeatureCols = new JLabel("Columnas de Sampleo:");
+        JLabel labelFeatureRows = new JLabel("Filas de Sampleo:");
+        JPanel spinPanel2 = new JPanel();
+
+        SpinnerNumberModel model5 = new SpinnerNumberModel(numberSamples, 100, 2000, 25);  // Initial value, min, max, step
+        JSpinner spinSamples = new JSpinner(model5);
+        JLabel labelSamples = new JLabel("Número de Muestras:");
+        JPanel spinPanel3 = new JPanel();
+
+        JCheckBox CielabCB = new JCheckBox("¿Usar CIELAB? (RGB por defecto)");
+        JPanel spinPanel4 = new JPanel();
+
+        // Panel for rows and colums.
+        spinPanel1.add(labelCols);
+        spinPanel1.add(spinCols);
+        spinPanel1.add(labelRows);
+        spinPanel1.add(spinRows);
+        // Panel for Features rows and colums.
+        spinPanel2.add(labelFeatureCols);
+        spinPanel2.add(spinFeatureCols);
+        spinPanel2.add(labelFeatureRows);
+        spinPanel2.add(spinFeatureRows);
+        // Panel for number of samples.
+        spinPanel3.add(labelSamples);
+        spinPanel3.add(spinSamples);
+        // Panel for checkbox
+        spinPanel4.add(CielabCB);
+
+        Object[] params = {spinPanel1, spinPanel2, spinPanel3, spinPanel4};
+        Object[] options = {"Aceptar", "Cancelar"};
+        int result = JOptionPane.showOptionDialog(  PanelMosaicoGenerado,
+            params,
+            "Opciones del Mosaico",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE,
+            null,           // Don't use a custom Icon
+            options,        // The strings of buttons
+            options[0]);    // Default button title
+
+        if (result == JOptionPane.NO_OPTION){
+            return;
+        }
+
+        colsBlock = (int)spinCols.getValue();
+        rowsBlock = (int)spinRows.getValue();
+        featuresPerBlockWidth = (int)spinFeatureCols.getValue();
+        featuresPerBlockHeight = (int)spinFeatureRows.getValue();
+        numberSamples = (int)spinSamples.getValue();
+
+        // index of sample, boolean "used", r, g, b for each block.
+        int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
+        targetImageFeatures = new int[rowsBlock * colsBlock][numberFeatures];
+        sampleImagesFeatures = new int[numberSamples][numberFeatures];
+    }//GEN-LAST:event_OpcionesActionPerformed
 
     /**
      * @param args the command line arguments
