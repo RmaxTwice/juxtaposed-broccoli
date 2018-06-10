@@ -7,9 +7,14 @@ package tarea4;
 
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.StreamTokenizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -62,6 +67,7 @@ public class MyGUI extends javax.swing.JFrame {
     private int[][] sampleImagesFeatures;
     // False = RGB and True = CIELAB
     private boolean RGBorCIELAB;
+    private boolean parseSampleImagesFeatures;
     
     /**
      * Creates new form MyGUI
@@ -98,6 +104,7 @@ public class MyGUI extends javax.swing.JFrame {
         targetImageFeatures = new int[rowsBlock * colsBlock][numberFeatures];
         sampleImagesFeatures = new int[numberSamples][numberFeatures];
         RGBorCIELAB = false;
+        parseSampleImagesFeatures = false;
     }
 
     /**
@@ -120,6 +127,7 @@ public class MyGUI extends javax.swing.JFrame {
         GenerarMosaico = new javax.swing.JToggleButton();
         LabelMosaicoGenerado = new javax.swing.JLabel();
         PanelMosaicoGenerado = new javax.swing.JPanel();
+        jScrollPane2 = new javax.swing.JScrollPane();
         BarraMenu = new javax.swing.JMenuBar();
         MenuArchivo = new javax.swing.JMenu();
         GuardarMosaico = new javax.swing.JMenuItem();
@@ -184,11 +192,11 @@ public class MyGUI extends javax.swing.JFrame {
         PanelMosaicoGenerado.setLayout(PanelMosaicoGeneradoLayout);
         PanelMosaicoGeneradoLayout.setHorizontalGroup(
             PanelMosaicoGeneradoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 565, Short.MAX_VALUE)
+            .addComponent(jScrollPane2, javax.swing.GroupLayout.DEFAULT_SIZE, 565, Short.MAX_VALUE)
         );
         PanelMosaicoGeneradoLayout.setVerticalGroup(
             PanelMosaicoGeneradoLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 0, Short.MAX_VALUE)
+            .addComponent(jScrollPane2)
         );
 
         MenuArchivo.setText("Archivo");
@@ -311,6 +319,32 @@ public class MyGUI extends javax.swing.JFrame {
         jScrollPane1.repaint();
     }
 
+    private void updateMosaicImageGUI(BufferedImage imgMsc){
+        int mWidth, mHeight;
+        if(imgMsc.getWidth() > imgMsc.getHeight()){
+            mWidth = jScrollPane2.getWidth() - 10;
+            mHeight = (int)(((double)mWidth / (double)imgMsc.getWidth()) * (double)imgMsc.getHeight());
+        }else{
+            mHeight = jScrollPane2.getHeight() - 10;
+            mWidth = (mHeight / imgMsc.getHeight()) * imgMsc.getWidth();
+        }
+
+        BufferedImage myResize = new BufferedImage(mWidth, mHeight, imgMsc.getType());
+        Graphics2D g = myResize.createGraphics();
+        g.drawImage(imgMsc, 0, 0, mWidth, mHeight, null);
+        g.dispose();
+
+        ImageIcon icon = new ImageIcon(myResize);
+        // Adding the ImageIcon to the Label.
+        mosaicImageLabel.setIcon( icon );
+        //Aligning the image to the center.
+        mosaicImageLabel.setHorizontalAlignment(JLabel.CENTER);
+        //Adding the label to the Scrolling pane.
+        jScrollPane2.getViewport().add(mosaicImageLabel);
+        // Repainting the scroll pane to update the changes
+        jScrollPane2.repaint();
+    }
+
     private ArrayList divideTargetImage(BufferedImage target){
         ArrayList<BufferedImage> smallerTargetImages = new ArrayList();
         BufferedImage auxImg;
@@ -394,11 +428,6 @@ public class MyGUI extends javax.swing.JFrame {
         BufferedImage auxImage;
         //FileWriter fw = new FileWriter("IMAGEDB/image_features.txt");
 
-        try(FileWriter fw = new FileWriter("IMAGEDB/0_image_features.txt")) {
-            fw.write("#archivo de features de muestras" + System.lineSeparator());
-        }catch (IOException ex) {
-            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
-        }
         for (int i = 0; i < num-1; i++){
             grabber.setVideoFrameNumber((int)(lengthInVideoFrames * factor) );
             frame = grabber.grab();
@@ -407,7 +436,7 @@ public class MyGUI extends javax.swing.JFrame {
             auxImage = myFC.convert(frame);
 
             // Extracting sample image features.
-            sampleImagesFeatures[i] = extractFeaturesFromImage(auxImage);
+            //sampleImagesFeatures[i] = extractFeaturesFromImage(auxImage);
 
             // Writing features to file
 
@@ -449,14 +478,14 @@ public class MyGUI extends javax.swing.JFrame {
         int w = targetImage.getWidth();
         int h = targetImage.getHeight();
         BufferedImage imgSample;
-        mosaicImage = new BufferedImage(w * colsBlock , targetImage.getHeight() * rowsBlock, targetImage.getType());
+        mosaicImage = new BufferedImage(w * colsBlock / 4 , h * rowsBlock / 4, targetImage.getType());
         for(int i = 0; i < targetImageFeatures.length; i++){
             x = i % colsBlock;
             y = i / colsBlock;
             try {
                 imgSample = ImageIO.read(new File("IMAGEDB/" + targetImageFeatures[i][0] + ".jpg"));
                 Graphics2D gr = mosaicImage.createGraphics();
-                gr.drawImage(imgSample, (w * x), (h * y), (w * x + w), (h * y + h), 0, 0, w, h, null);
+                gr.drawImage(imgSample, (w * x)/4, (h * y)/4, (w * x + w)/4, (h * y + h)/4, 0, 0, w, h, null);
                 //gr.drawImage(imgSample, 0, 0, w, h, (w * x), (h * y), (w * x + w), (h * y + h), null);
                 gr.dispose();
             } catch (IOException e) {
@@ -475,6 +504,68 @@ public class MyGUI extends javax.swing.JFrame {
         }
 
         return result;
+    }
+
+    private void parseFeaturesFromSampleImages(String path){
+        FileInputStream in = null;
+        StreamTokenizer parser;
+        BufferedReader reader;
+        int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
+
+        try {
+            in = new FileInputStream( path );
+        } catch (FileNotFoundException ex) {
+            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        reader = new BufferedReader(new InputStreamReader(in));
+        parser = new StreamTokenizer(reader);
+        // Filtering out comments from the data
+        parser.commentChar('#');
+        try {
+            for(int i = 0; i < sampleImagesFeatures.length; i++){
+                for (int j = 0; j <  numberFeatures; j++){
+                    parser.nextToken();
+                    sampleImagesFeatures[i][j] = (int)parser.nval;
+                }
+            }
+        } catch (IOException ex) {
+            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    private void extractFeaturesFromSampleImages(){
+        BufferedImage imgSample;
+        File f = new File("IMAGEDB/0_image_features.txt");
+        int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
+
+        if (f.exists() && !f.isDirectory()) {
+            if(parseSampleImagesFeatures){
+                // Parsing a file containing all of the sample images features if the parameters and
+                // sample images have not changed since the last time the features were extracted.
+                parseFeaturesFromSampleImages("IMAGEDB/0_image_features.txt");
+                return;
+            }
+            f.delete();
+        }
+        try(FileWriter fw = new FileWriter("IMAGEDB/0_image_features.txt")) {
+            fw.write("#archivo de features de muestras" + System.lineSeparator());
+            for (int i = 0; i < sampleImagesFeatures.length; i++){
+                try {
+                    imgSample = ImageIO.read(new File("IMAGEDB/" + i + ".jpg"));
+                    sampleImagesFeatures[i] = extractFeaturesFromImage(imgSample);
+                    // Writing features line to file.
+                    for(int k = 0; k < numberFeatures; k++){
+                        fw.write(sampleImagesFeatures[i][k] + " ");
+                    }
+                    fw.write(System.lineSeparator());
+                } catch (IOException e) {
+                    JOptionPane.showMessageDialog(this, "ERROR: No se pudo abrir imagen de muestra " + i + ".jpg");
+                }
+            }
+            parseSampleImagesFeatures = true;
+        }catch (IOException ex) {
+            Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     private void ElegirImagenActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ElegirImagenActionPerformed
@@ -516,20 +607,19 @@ public class MyGUI extends javax.swing.JFrame {
     private void GenerarMosaicoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_GenerarMosaicoActionPerformed
         // 1- Target image gets divided into NxM Blocks and the features extraction of target image and sample images is performed.
         ArrayList<BufferedImage> targetImageBlocks = divideTargetImage(targetImage);
-        double blockWidth = (double)targetImage.getWidth() / (double)colsBlock;
-        double blockHeight = (double)targetImage.getHeight() / (double)rowsBlock;
-        int[] pixelData;
-        //targetImage.getRGB(0,0,10,10,pixelData,0,10);
-        
         // Extracting features from targetImage's blocks
         for (int i = 0; i < targetImageBlocks.size(); i++){
             targetImageFeatures[i] = extractFeaturesFromImage(targetImageBlocks.get(i));
         }
 
+        // Extracting features from sample images
+        extractFeaturesFromSampleImages();
+
         // 2- The sample images get matched to the target images blocks
         matchSampleImagesToTargetImage();
-
         createMosaicImageFromSamples();
+
+        updateMosaicImageGUI(mosaicImage);
 
         try {
             //File outputfile = new File("myMosaic.png");
@@ -537,13 +627,13 @@ public class MyGUI extends javax.swing.JFrame {
         } catch (IOException ex) {
             Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
         }
-
-        for (int i = 0; i < targetImageBlocks.size(); i++){
+        for (int i = 0; i < targetImageFeatures.length; i++){
             targetImageFeatures[i][0] = 0;
         }
         for (int i = 0; i < sampleImagesFeatures.length; i++){
-            targetImageFeatures[i][0] = 0;
+            sampleImagesFeatures[i][1] = 0;
         }
+        //JOptionPane.showMessageDialog(this, "Mosaico generado con Éxito!");
     }//GEN-LAST:event_GenerarMosaicoActionPerformed
 
     private void GenerarMuestrasActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_GenerarMuestrasActionPerformed
@@ -561,7 +651,7 @@ public class MyGUI extends javax.swing.JFrame {
         } catch (FrameGrabber.Exception ex) {
             Logger.getLogger(MyGUI.class.getName()).log(Level.SEVERE, null, ex);
         }
-        JOptionPane.showMessageDialog(this, "Imágenes Muestra generadas con Éxito!");
+        JOptionPane.showMessageDialog(this, numberSamples + " imágenes muestra generadas con Éxito!");
     }//GEN-LAST:event_GenerarMuestrasActionPerformed
 
     private void OpcionesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_OpcionesActionPerformed
@@ -587,6 +677,7 @@ public class MyGUI extends javax.swing.JFrame {
         JPanel spinPanel3 = new JPanel();
 
         JCheckBox CielabCB = new JCheckBox("¿Usar CIELAB? (RGB por defecto)");
+        CielabCB.setSelected(RGBorCIELAB);
         JPanel spinPanel4 = new JPanel();
 
         // Panel for rows and colums.
@@ -620,11 +711,27 @@ public class MyGUI extends javax.swing.JFrame {
             return;
         }
 
-        colsBlock = (int)spinCols.getValue();
-        rowsBlock = (int)spinRows.getValue();
-        featuresPerBlockWidth = (int)spinFeatureCols.getValue();
-        featuresPerBlockHeight = (int)spinFeatureRows.getValue();
-        numberSamples = (int)spinSamples.getValue();
+        if(colsBlock != (int)spinCols.getValue()){
+            colsBlock = (int)spinCols.getValue();
+        }
+        if( rowsBlock != (int)spinRows.getValue() ){
+            rowsBlock = (int)spinRows.getValue();
+        }
+        if( featuresPerBlockWidth != (int)spinFeatureCols.getValue() ){
+            featuresPerBlockWidth = (int)spinFeatureCols.getValue();
+            parseSampleImagesFeatures = false;
+        }
+        if( featuresPerBlockHeight != (int)spinFeatureRows.getValue() ){
+            featuresPerBlockHeight = (int)spinFeatureRows.getValue();
+            parseSampleImagesFeatures = false;
+        }
+        if( numberSamples != (int)spinSamples.getValue() ){
+            numberSamples = (int)spinSamples.getValue();
+            parseSampleImagesFeatures = false;
+        }
+        if( RGBorCIELAB != CielabCB.isSelected() ){
+            RGBorCIELAB = CielabCB.isSelected();
+        }
 
         // index of sample, boolean "used", r, g, b for each block.
         int numberFeatures = featuresPerBlockHeight * featuresPerBlockWidth * 3 + 2;
@@ -680,5 +787,6 @@ public class MyGUI extends javax.swing.JFrame {
     private javax.swing.JPanel PanelMosaicoGenerado;
     private javax.swing.JTextField UbicacionPelicula;
     private javax.swing.JScrollPane jScrollPane1;
+    private javax.swing.JScrollPane jScrollPane2;
     // End of variables declaration//GEN-END:variables
 }
