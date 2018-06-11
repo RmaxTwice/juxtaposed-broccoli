@@ -5,6 +5,8 @@
  */
 package tarea4;
 
+import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
@@ -19,17 +21,25 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
+import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
+import javax.swing.JFormattedTextField;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.border.EtchedBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import org.bytedeco.javacpp.opencv_core.*;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
@@ -570,6 +580,7 @@ public class MyGUI extends javax.swing.JFrame {
                     fw.write(System.lineSeparator());
                 } catch (IOException e) {
                     JOptionPane.showMessageDialog(this, "ERROR: No se pudo abrir imagen de muestra " + i + ".jpg");
+                    return;
                 }
             }
             parseSampleImagesFeatures = true;
@@ -579,21 +590,61 @@ public class MyGUI extends javax.swing.JFrame {
     }
 
     private void ElegirImagenActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ElegirImagenActionPerformed
+        //Input
         if (!"".equals(moviePath)){
-            int returnVal = fcOpenPic.showOpenDialog(this);
-            if (returnVal == JFileChooser.APPROVE_OPTION) {
-                File file = fcOpenPic.getSelectedFile();
-                try {
-                    // Filling BufferedImage with file information
-                    targetImage = ImageIO.read(file);
-                    updateTargetImageGUI(targetImage);
-                } catch (IOException e) {
-                    // Report exceptions
-                    JOptionPane.showMessageDialog(this, "Error al escoger Imagen Objetivo!");
-                }
-//                divideTargetImage(targetImage);
-//                JOptionPane.showMessageDialog(this, "Formato de imagen: " + targetImage.getType());
+            try {
+                //Input
+                String stamp = JOptionPane.showInputDialog(jScrollPane1, 
+                "Ingrese la etiqueta de tiempo del cuadro a seleccionar:\nUse el formato HH:MM:SS",
+                "Elegir Imagen",
+                JOptionPane.PLAIN_MESSAGE);                
+                
+                long lengthInTime= grabber.getLengthInTime();
+                int lengthInVideoFrames= grabber.getLengthInVideoFrames();
+                Java2DFrameConverter myFC = new Java2DFrameConverter();
+                
+                //Converting input string to numbers
+                String tstamp [] = stamp.split(":") ;
+                int h = Integer.parseInt(tstamp[0]);
+                int m = Integer.parseInt(tstamp[1]);
+                int s = Integer.parseInt(tstamp[2]);
+                
+                //Convert Hours, minutes and seconds from timestamp to microsecs
+                TimeUnit myu = TimeUnit.MICROSECONDS;
+                long h_myu = myu.convert(h, TimeUnit.HOURS);
+                long m_myu = myu.convert(m, TimeUnit.MINUTES);
+                long s_myu = myu.convert(s, TimeUnit.SECONDS);
+                //Set parameters according to timestamp
+                long myu_stamp = h_myu + m_myu + s_myu;
+                long full_length = grabber.getLengthInTime();
+                double myu_factor = (double)myu_stamp / (double)full_length;
+                //Choose the image according to timestamp
+                grabber.setVideoFrameNumber((int)(lengthInVideoFrames*myu_factor));
+                Frame frame = grabber.grab();
+
+                //Put the selected frame to the target image
+                targetImage = myFC.convert(frame);
+                updateTargetImageGUI(targetImage);
+                //grabber.release();
+            } catch (IOException e) {
+                // Report exceptions
+                JOptionPane.showMessageDialog(this, "Error al escoger Imagen Objetivo!");
             }
+//        if (!"".equals(moviePath)){
+//            int returnVal = fcOpenPic.showOpenDialog(this);
+//            if (returnVal == JFileChooser.APPROVE_OPTION) {
+//                File file = fcOpenPic.getSelectedFile();
+//                try {
+//                    // Filling BufferedImage with file information
+//                    targetImage = ImageIO.read(file);
+//                    updateTargetImageGUI(targetImage);
+//                } catch (IOException e) {
+//                    // Report exceptions
+//                    JOptionPane.showMessageDialog(this, "Error al escoger Imagen Objetivo!");
+//                }
+////                divideTargetImage(targetImage);
+////                JOptionPane.showMessageDialog(this, "Formato de imagen: " + targetImage.getType());
+//            }
         }else{
             JOptionPane.showMessageDialog(this, "¡ERROR: Escoja una película primero!");
         }
